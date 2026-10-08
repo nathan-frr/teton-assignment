@@ -1,7 +1,12 @@
 from bluezero import adapter
 from bluezero import peripheral
 import subprocess
-from crypto_utils import generate_key_pair,derive_session_key_from_peer
+
+from crypto_utils import (
+    generate_key_pair,
+    derive_session_key_from_peer,
+    decrypt_credentials,
+    )
 
 
 DEVICE_NAME = "Teton-5FG2"
@@ -11,9 +16,15 @@ CHARACTERISTIC_UUID = "f62b8918-e9ef-4481-94b6-4e5c17f0a700"
 PUBLIC_KEY_CHARACTERISTIC_UUID = "75a65872-af14-4fde-9ab7-b68e3df74d30"
 CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID = "c0ad84ed-5c63-496e-ab9b-5eb2a5315bd2"
 
+GCM_NONCE_LENGTH = 12
+
 teton_private_key = None
+session_key = None
+
 
 def connect_to_wifi(ssid, password):
+    print(f"Connecting to Wi-Fi network: {ssid}")
+
     result = subprocess.run(
         [
             "nmcli",
@@ -37,18 +48,52 @@ def connect_to_wifi(ssid, password):
 
 
 def on_write(value, options):
-    data = bytes(value).decode("utf-8")
+    global session_key
 
-    ssid, password = data.split("/", 1)
+    if session_key is None:
+        print("No secure session established.")
+        return
 
-    print(f"SSID: {ssid}")
-    print(f"Password: {password}")
+    encrypted_data = bytes(value)
 
-    connect_to_wifi(ssid, password)
+    print(
+        f"Encrypted Wi-Fi credentials received "
+        f"({len(encrypted_data)} bytes)."
+    )
+
+    if len(encrypted_data) <= GCM_NONCE_LENGTH:
+        print("Invalid encrypted payload.")
+        return
+
+    try:
+        # Android sends:
+        # [12-byte nonce][ciphertext + GCM authentication tag]
+        nonce = encrypted_data[:GCM_NONCE_LENGTH]
+        ciphertext = encrypted_data[GCM_NONCE_LENGTH:]
+
+        # Decrypt the credentials
+        credentials = decrypt_credentials(
+            session_key,
+            nonce,
+            ciphertext,
+        )
+
+        ssid = credentials["ssid"].strip()
+        password = credentials["password"]
+
+        print(f"Received Wi-Fi credentials for SSID: {ssid}")
+
+        # Do not print the password.
+        connect_to_wifi(ssid, password)
+
+    except Exception as exception:
+        print("Failed to decrypt Wi-Fi credentials.")
+        print(f"Error: {type(exception).__name__}: {exception}")
 
 
 def on_configurator_public_key(value, options):
     global teton_private_key
+    global session_key
 
     configurator_public_key = bytes(value)
 
@@ -68,6 +113,7 @@ def on_configurator_public_key(value, options):
     )
 
     print(f"Teton session key: {session_key.hex()}")
+    print("Secure provisioning session established.")
 
 
 def main():
