@@ -1,11 +1,13 @@
 from bluezero import adapter
 from bluezero import peripheral
 import subprocess
+from crypto_utils import generate_key_pair
 
 DEVICE_NAME = "Teton-5FG2"
 
 SERVICE_UUID = "a5f1063d-0998-43be-9946-3eaacaf74ab1"
 CHARACTERISTIC_UUID = "f62b8918-e9ef-4481-94b6-4e5c17f0a700"
+PUBLIC_KEY_CHARACTERISTIC_UUID = "75a65872-af14-4fde-9ab7-b68e3df74d30"
 
 
 def connect_to_wifi(ssid, password):
@@ -45,6 +47,9 @@ def on_write(value, options):
 def main():
     bluetooth_adapter = list(adapter.Adapter.available())[0]
 
+    private_key, public_key = generate_key_pair()
+    public_key_bytes = public_key.public_bytes_raw()
+
     device = peripheral.Peripheral(
         bluetooth_adapter.address,
         local_name=DEVICE_NAME,
@@ -64,6 +69,15 @@ def main():
         notifying=False,
         flags=["write", "write-without-response"],
         write_callback=on_write,
+    )
+
+    device.add_characteristic(
+        srv_id=1,
+        chr_id=2,
+        uuid=PUBLIC_KEY_CHARACTERISTIC_UUID,
+        value=list(public_key_bytes),
+        notifying=False,
+        flags=["read"],
     )
 
     print(f"Advertising as {DEVICE_NAME}...")
