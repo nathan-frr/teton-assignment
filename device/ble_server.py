@@ -8,6 +8,7 @@ DEVICE_NAME = "Teton-5FG2"
 SERVICE_UUID = "a5f1063d-0998-43be-9946-3eaacaf74ab1"
 CHARACTERISTIC_UUID = "f62b8918-e9ef-4481-94b6-4e5c17f0a700"
 PUBLIC_KEY_CHARACTERISTIC_UUID = "75a65872-af14-4fde-9ab7-b68e3df74d30"
+CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID = "c0ad84ed-5c63-496e-ab9b-5eb2a5315bd2"
 
 
 def connect_to_wifi(ssid, password):
@@ -42,6 +43,11 @@ def on_write(value, options):
     print(f"Password: {password}")
 
     connect_to_wifi(ssid, password)
+
+def on_configurator_public_key(value, options):
+    public_key = bytes(value)
+
+    print(f"Configurator public key received: {public_key.hex()}")
 
 
 def main():
@@ -78,6 +84,16 @@ def main():
         value=list(public_key_bytes),
         notifying=False,
         flags=["read"],
+    )
+
+    device.add_characteristic(
+        srv_id=1,
+        chr_id=3,
+        uuid=CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID,
+        value=[],
+        notifying=False,
+        flags=["write", "write-without-response"],
+        write_callback=on_configurator_public_key,
     )
 
     print(f"Advertising as {DEVICE_NAME}...")
