@@ -2,7 +2,7 @@ import base64
 import json
 
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
@@ -23,6 +23,19 @@ def derive_session_key(private_key, peer_public_key):
         salt=None,
         info=b"teton-provisioning-v1",
     ).derive(shared_secret)
+
+def derive_session_key_from_peer(
+    private_key,
+    peer_public_key_bytes,
+):
+    peer_public_key = X25519PublicKey.from_public_bytes(
+        peer_public_key_bytes
+    )
+
+    return derive_session_key(
+        private_key,
+        peer_public_key,
+    )
 
 
 def decrypt_credentials(session_key, nonce, ciphertext):

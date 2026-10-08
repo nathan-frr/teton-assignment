@@ -1,7 +1,8 @@
 from bluezero import adapter
 from bluezero import peripheral
 import subprocess
-from crypto_utils import generate_key_pair
+from crypto_utils import generate_key_pair,derive_session_key_from_peer
+
 
 DEVICE_NAME = "Teton-5FG2"
 
@@ -10,6 +11,7 @@ CHARACTERISTIC_UUID = "f62b8918-e9ef-4481-94b6-4e5c17f0a700"
 PUBLIC_KEY_CHARACTERISTIC_UUID = "75a65872-af14-4fde-9ab7-b68e3df74d30"
 CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID = "c0ad84ed-5c63-496e-ab9b-5eb2a5315bd2"
 
+teton_private_key = None
 
 def connect_to_wifi(ssid, password):
     result = subprocess.run(
@@ -44,16 +46,37 @@ def on_write(value, options):
 
     connect_to_wifi(ssid, password)
 
-def on_configurator_public_key(value, options):
-    public_key = bytes(value)
 
-    print(f"Configurator public key received: {public_key.hex()}")
+def on_configurator_public_key(value, options):
+    global teton_private_key
+
+    configurator_public_key = bytes(value)
+
+    print(
+        f"Configurator public key received: "
+        f"{configurator_public_key.hex()}"
+    )
+
+    if len(configurator_public_key) != 32:
+        print("Invalid configurator public key.")
+        return
+
+    # Derive the shared session key using X25519 + HKDF-SHA256
+    session_key = derive_session_key_from_peer(
+        teton_private_key,
+        configurator_public_key,
+    )
+
+    print(f"Teton session key: {session_key.hex()}")
 
 
 def main():
+    global teton_private_key
+
     bluetooth_adapter = list(adapter.Adapter.available())[0]
 
-    private_key, public_key = generate_key_pair()
+    teton_private_key, public_key = generate_key_pair()
+
     public_key_bytes = public_key.public_bytes_raw()
 
     device = peripheral.Peripheral(

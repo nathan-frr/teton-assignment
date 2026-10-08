@@ -17,6 +17,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.util.Log.d
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -288,14 +289,32 @@ class MainActivity : ComponentActivity() {
             null
         }
     }
+    private fun ByteArray.toHex(): String =
+        joinToString("") {
+            "%02x".format(it)
+        }
 
     @SuppressLint("MissingPermission")
-    private fun sendConfiguratorPublicKey(gatt: BluetoothGatt) {
+    private fun sendConfiguratorPublicKey(
+        gatt: BluetoothGatt,
+        tetonPublicKey: ByteArray,
+    ) {
 
         keyPair = CryptoUtils.generateX25519KeyPair()
 
         val publicKey =
             CryptoUtils.getRawPublicKey(keyPair!!)
+
+        val sessionKey =
+            CryptoUtils.deriveSessionKey(
+                keyPair = keyPair!!,
+                peerRawPublicKey = tetonPublicKey,
+            )
+
+        d(
+            TAG,
+            "Android session key: ${sessionKey.toHex()}"
+        )
 
         val service =
             gatt.getService(BleConstants.SERVICE_UUID)
@@ -402,7 +421,10 @@ class MainActivity : ComponentActivity() {
 
                 status = "Teton public key received"
 
-                sendConfiguratorPublicKey(gatt)
+                sendConfiguratorPublicKey(
+                    gatt,
+                    tetonPublicKey
+                )
             }
         }
 
