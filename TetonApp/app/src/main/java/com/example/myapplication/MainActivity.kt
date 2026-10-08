@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
@@ -85,6 +86,8 @@ class MainActivity : ComponentActivity() {
 
     private var isConnected by mutableStateOf(false)
     private var isProvisioningReady by mutableStateOf(false)
+    private var wifiConnected by mutableStateOf(false)
+    private var waitingForWifiConfirmation by mutableStateOf(false)
 
     private var ssid by mutableStateOf("")
     private var password by mutableStateOf("")
@@ -199,6 +202,16 @@ class MainActivity : ComponentActivity() {
 
                         if (isProvisioningReady) {
 
+                            Button(
+                                onClick = ::returnToScanning,
+                                enabled = !isSendingCredentials,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Back to device list")
+                            }
+
+                            Spacer(Modifier.height(12.dp))
+
                             OutlinedTextField(
                                 value = ssid,
                                 onValueChange = { ssid = it },
@@ -226,20 +239,53 @@ class MainActivity : ComponentActivity() {
 
                             Spacer(Modifier.height(16.dp))
 
-                            Button(
-                                onClick = ::sendWifiCredentials,
-                                enabled = ssid.isNotBlank() &&
-                                        password.isNotEmpty() &&
-                                        !isSendingCredentials,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
+                            if (wifiConnected) {
+
                                 Text(
-                                    if (isSendingCredentials) {
-                                        "Sending…"
-                                    } else {
-                                        "Send Wi-Fi credentials"
-                                    }
+                                    text = "Wi-Fi connected ✓",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
                                 )
+
+                            } else if (waitingForWifiConfirmation) {
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier
+                                            .width(20.dp)
+                                            .height(20.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+
+                                    Spacer(Modifier.width(10.dp))
+
+                                    Text(
+                                        text = "Waiting for Wi-Fi connection…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+
+                            } else {
+
+                                Button(
+                                    onClick = ::sendWifiCredentials,
+                                    enabled = ssid.isNotBlank() &&
+                                            password.isNotEmpty() &&
+                                            !isSendingCredentials,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text(
+                                        if (isSendingCredentials) {
+                                            "Sending Credentials…"
+                                        } else {
+                                            "Send Wi-Fi credentials"
+                                        }
+                                    )
+                                }
                             }
 
                         } else if (devices.isNotEmpty()) {
@@ -451,6 +497,9 @@ class MainActivity : ComponentActivity() {
 
         isConnected = false
         isProvisioningReady = false
+        wifiConnected = false
+        waitingForWifiConfirmation = false
+        isSendingCredentials = false
         sessionKey = null
         keyPair = null
 
@@ -472,6 +521,23 @@ class MainActivity : ComponentActivity() {
             status = "Bluetooth permission is required to connect"
             null
         }
+    }
+
+
+    @SuppressLint("MissingPermission")
+    private fun returnToScanning() {
+        bluetoothGatt?.close()
+        bluetoothGatt = null
+        isConnected = false
+        isProvisioningReady = false
+        wifiConnected = false
+        waitingForWifiConfirmation = false
+        isSendingCredentials = false
+        sessionKey = null
+        keyPair = null
+        ssid = ""
+        password = ""
+        status = "Ready to scan"
     }
 
 
@@ -560,7 +626,8 @@ class MainActivity : ComponentActivity() {
         }
 
         isSendingCredentials = true
-        status = "Encrypting Wi-Fi credentials…"
+        wifiConnected = false
+        status = "Sending Credentials…"
 
         try {
             /*
@@ -606,13 +673,15 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            status = "Sending encrypted Wi-Fi credentials…"
+            status = "Sending Credentials…"
 
             val writeResult = gatt.writeCharacteristic(
                 characteristic,
                 encryptedPayload,
                 BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             )
+
+            Log.d(TAG, "Credential write queued; result=$writeResult")
 
             if (writeResult != BluetoothGatt.GATT_SUCCESS) {
                 Log.e(
@@ -688,6 +757,48 @@ class MainActivity : ComponentActivity() {
         return nonce + ciphertext
     }
 
+    @SuppressLint("MissingPermission")
+    private fun enableWifiStatusNotifications(
+        gatt: BluetoothGatt
+    ): Boolean {
+        val service = gatt.getService(BleConstants.SERVICE_UUID)
+
+        val characteristic = service?.getCharacteristic(
+            BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID
+        )
+
+        if (characteristic == null) {
+            Log.e(TAG, "Wi-Fi status characteristic not found")
+            return false
+        }
+
+        if (!gatt.setCharacteristicNotification(
+                characteristic,
+                true
+            )
+        ) {
+            Log.e(TAG, "Could not enable local Wi-Fi notifications")
+            return false
+        }
+
+        val descriptor = characteristic.getDescriptor(
+            java.util.UUID.fromString(
+                "00002902-0000-1000-8000-00805f9b34fb"
+            )
+        )
+
+        if (descriptor == null) {
+            Log.e(TAG, "CCCD descriptor not found")
+            return false
+        }
+
+        val writeResult = gatt.writeDescriptor(
+            descriptor,
+            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        )
+
+        return writeResult == BluetoothGatt.GATT_SUCCESS
+    }
 
     private val gattCallback = object : BluetoothGattCallback() {
 
@@ -818,40 +929,39 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            val publicKeyCharacteristic =
-                service.getCharacteristic(
-                    BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID,
-                )
-
-            if (publicKeyCharacteristic == null) {
-                Log.e(
-                    TAG,
-                    "Public-key characteristic " +
-                            "${BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID} " +
-                            "was not found"
-                )
-
-                status =
-                    "Public key characteristic not found"
+            if (!enableWifiStatusNotifications(gatt)) {
+                status = "Could not enable Wi-Fi status notifications"
                 return
             }
 
-            status = "Reading Teton public key…"
+            status = "Enabling Wi-Fi status notifications…"
+        }
 
-            val readStarted =
-                gatt.readCharacteristic(
-                    publicKeyCharacteristic
-                )
 
-            if (!readStarted) {
-                Log.e(
-                    TAG,
-                    "Could not start public-key characteristic read"
-                )
-
-                status =
-                    "Could not start public-key read"
+        override fun onDescriptorWrite(
+            gatt: BluetoothGatt,
+            descriptor: BluetoothGattDescriptor,
+            statusCode: Int,
+        ) {
+            val clientConfigurationDescriptor = java.util.UUID.fromString(
+                "00002902-0000-1000-8000-00805f9b34fb"
+            )
+            if (
+                descriptor.uuid != clientConfigurationDescriptor ||
+                descriptor.characteristic.uuid != BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID
+            ) {
+                return
             }
+
+            Log.d(TAG, "Wi-Fi status CCCD write completed; status=$statusCode")
+
+            if (statusCode != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(TAG, "Could not enable Wi-Fi status notifications; status=$statusCode")
+                status = "Could not enable Wi-Fi status notifications"
+                return
+            }
+
+            readTetonPublicKey(gatt)
         }
 
 
@@ -860,30 +970,39 @@ class MainActivity : ComponentActivity() {
             characteristic: BluetoothGattCharacteristic,
             statusCode: Int,
         ) {
+            Log.d(
+                TAG,
+                "Characteristic read completed: ${characteristic.uuid}, status=$statusCode"
+            )
             if (statusCode != BluetoothGatt.GATT_SUCCESS) {
                 Log.e(
                     TAG,
-                    "Characteristic read failed with status=$statusCode"
+                    "Characteristic ${characteristic.uuid} read failed with status=$statusCode"
                 )
 
-                status = "Failed to read public key"
+                if (characteristic.uuid == BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID) {
+                    // A transient status-read error is not a Wi-Fi failure.
+                    // Keep waiting for the status notification; only Teton's
+                    // explicit "failed" value should show a connection error.
+                    Log.w(TAG, "Wi-Fi status read failed; waiting for notification")
+                } else {
+                    status = "Failed to read public key"
+                }
                 return
             }
 
-            if (
-                characteristic.uuid ==
-                BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID
-            ) {
-                val tetonPublicKey =
-                    characteristic.value
+            when (characteristic.uuid) {
+                BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID -> {
+                    val tetonPublicKey = characteristic.value
+                    status = "Teton public key received"
+                    sendConfiguratorPublicKey(gatt, tetonPublicKey)
+                }
 
-                status =
-                    "Teton public key received"
-
-                sendConfiguratorPublicKey(
-                    gatt,
-                    tetonPublicKey
-                )
+                BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID -> {
+                    val wifiStatus = characteristic.value.toString(Charsets.UTF_8)
+                    Log.d(TAG, "Wi-Fi status read from Teton: $wifiStatus")
+                    applyWifiStatus(wifiStatus)
+                }
             }
         }
 
@@ -893,6 +1012,10 @@ class MainActivity : ComponentActivity() {
             characteristic: BluetoothGattCharacteristic,
             statusCode: Int,
         ) {
+            Log.d(
+                TAG,
+                "Characteristic write completed: ${characteristic.uuid}, status=$statusCode"
+            )
             if (
                 characteristic.uuid ==
                 BleConstants.CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID
@@ -929,31 +1052,121 @@ class MainActivity : ComponentActivity() {
                 BleConstants.PROVISIONING_CHARACTERISTIC_UUID
             ) {
                 if (statusCode == BluetoothGatt.GATT_SUCCESS) {
-
-                    status =
-                        "Encrypted Wi-Fi credentials sent"
-
-                    isSendingCredentials = false
-
-                    d(
-                        TAG,
-                        "Encrypted Wi-Fi credential write successful"
-                    )
+                    Log.d(TAG, "Credential write acknowledged; reading Wi-Fi status")
+                    if (!wifiConnected) {
+                        waitingForWifiConfirmation = true
+                        status = "Waiting for Wi-Fi connection…"
+                    }
+                    readWifiStatus(gatt)
 
                 } else {
 
                     Log.e(
                         TAG,
-                        "Credential write failed; " +
-                                "status=$statusCode"
+                        "Credential write failed; status=$statusCode"
                     )
 
-                    status =
-                        "Failed to send Wi-Fi credentials"
-
+                    status = "Failed to send Wi-Fi credentials"
                     isSendingCredentials = false
                 }
             }
+        }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+        ) {
+            handleCharacteristicChanged(characteristic, characteristic.value)
+        }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray,
+        ) {
+            handleCharacteristicChanged(characteristic, value)
+        }
+
+        private fun handleCharacteristicChanged(
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray,
+        ) {
+            Log.d(TAG, "Characteristic changed callback: ${characteristic.uuid}")
+            if (
+                characteristic.uuid ==
+                BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID
+            ) {
+                val wifiStatus = value.toString(Charsets.UTF_8)
+
+                Log.d(
+                    TAG,
+                    "Wi-Fi status notification received: $wifiStatus"
+                )
+
+                applyWifiStatus(wifiStatus)
+            }
+        }
+    }
+
+    private fun applyWifiStatus(wifiStatus: String) {
+        when (wifiStatus) {
+            "connecting" -> {
+                waitingForWifiConfirmation = true
+                wifiConnected = false
+                status = "Waiting for Wi-Fi connection…"
+            }
+
+            "connected" -> {
+                waitingForWifiConfirmation = false
+                wifiConnected = true
+                isSendingCredentials = false
+                status = "Wi-Fi connected"
+            }
+
+            "failed" -> {
+                waitingForWifiConfirmation = false
+                wifiConnected = false
+                isSendingCredentials = false
+                status = "Could not connect to Wi-Fi"
+            }
+
+            else -> Log.w(TAG, "Unrecognized Wi-Fi status from Teton: '$wifiStatus'")
+        }
+    }
+
+
+    @SuppressLint("MissingPermission")
+    private fun readWifiStatus(gatt: BluetoothGatt) {
+        val characteristic = gatt
+            .getService(BleConstants.SERVICE_UUID)
+            ?.getCharacteristic(BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID)
+
+        if (characteristic == null) {
+            Log.e(TAG, "Cannot read Wi-Fi status: characteristic not found")
+            return
+        }
+
+        val started = gatt.readCharacteristic(characteristic)
+        Log.d(TAG, "Requested Wi-Fi status read; started=$started")
+    }
+
+
+    @SuppressLint("MissingPermission")
+    private fun readTetonPublicKey(gatt: BluetoothGatt) {
+        val characteristic = gatt
+            .getService(BleConstants.SERVICE_UUID)
+            ?.getCharacteristic(BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID)
+
+        if (characteristic == null) {
+            Log.e(TAG, "Public-key characteristic ${BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID} was not found")
+            status = "Public key characteristic not found"
+            return
+        }
+
+        status = "Reading Teton public key…"
+        if (!gatt.readCharacteristic(characteristic)) {
+            Log.e(TAG, "Could not start public-key characteristic read")
+            status = "Could not start public-key read"
         }
     }
 

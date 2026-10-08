@@ -6,7 +6,7 @@ from crypto_utils import (
     generate_key_pair,
     derive_session_key_from_peer,
     decrypt_credentials,
-    )
+)
 
 
 DEVICE_NAME = "Teton-5FG2"
@@ -20,6 +20,31 @@ GCM_NONCE_LENGTH = 12
 
 teton_private_key = None
 session_key = None
+
+wifi_status_characteristic = None
+
+
+def read_wifi_status():
+    return list(wifi_connection_status.encode("utf-8"))
+
+
+wifi_connection_status = "not_connected"
+
+
+def update_wifi_status(status):
+    global wifi_connection_status
+
+    wifi_connection_status = status
+
+    print(f"Wi-Fi status: {status}")
+
+    if wifi_status_characteristic is not None:
+        wifi_status_characteristic.set_value(
+            list(status.encode("utf-8"))
+        )
+        print(f"BLE Wi-Fi status characteristic updated to: {status}")
+    else:
+        print("BLE Wi-Fi status characteristic is not initialized")
 
 
 def connect_to_wifi(ssid, password):
@@ -42,9 +67,11 @@ def connect_to_wifi(ssid, password):
     if result.returncode == 0:
         print("Wi-Fi connection successful.")
         print(result.stdout.strip())
-    else:
-        print("Wi-Fi connection failed.")
-        print(result.stderr.strip())
+        return True
+
+    print("Wi-Fi connection failed.")
+    print(result.stderr.strip())
+    return False
 
 
 def on_write(value, options):
@@ -52,6 +79,7 @@ def on_write(value, options):
 
     if session_key is None:
         print("No secure session established.")
+        update_wifi_status("failed")
         return
 
     encrypted_data = bytes(value)
@@ -63,6 +91,7 @@ def on_write(value, options):
 
     if len(encrypted_data) <= GCM_NONCE_LENGTH:
         print("Invalid encrypted payload.")
+        update_wifi_status("failed")
         return
 
     try:
@@ -71,7 +100,6 @@ def on_write(value, options):
         nonce = encrypted_data[:GCM_NONCE_LENGTH]
         ciphertext = encrypted_data[GCM_NONCE_LENGTH:]
 
-        # Decrypt the credentials
         credentials = decrypt_credentials(
             session_key,
             nonce,
@@ -83,12 +111,25 @@ def on_write(value, options):
 
         print(f"Received Wi-Fi credentials for SSID: {ssid}")
 
-        # Do not print the password.
-        connect_to_wifi(ssid, password)
+        update_wifi_status("connecting")
+
+        connected = connect_to_wifi(
+            ssid,
+            password,
+        )
+
+        if connected:
+            update_wifi_status("connected")
+        else:
+            update_wifi_status("failed")
 
     except Exception as exception:
+        update_wifi_status("failed")
+
         print("Failed to decrypt Wi-Fi credentials.")
-        print(f"Error: {type(exception).__name__}: {exception}")
+        print(
+            f"Error: {type(exception).__name__}: {exception}"
+        )
 
 
 def on_configurator_public_key(value, options):
@@ -106,7 +147,6 @@ def on_configurator_public_key(value, options):
         print("Invalid configurator public key.")
         return
 
-    # Derive the shared session key using X25519 + HKDF-SHA256
     session_key = derive_session_key_from_peer(
         teton_private_key,
         configurator_public_key,
@@ -118,6 +158,7 @@ def on_configurator_public_key(value, options):
 
 def main():
     global teton_private_key
+    global wifi_status_characteristic
 
     bluetooth_adapter = list(adapter.Adapter.available())[0]
 
@@ -142,7 +183,10 @@ def main():
         uuid=CHARACTERISTIC_UUID,
         value=[],
         notifying=False,
-        flags=["write", "write-without-response"],
+        flags=[
+            "write",
+            "write-without-response",
+        ],
         write_callback=on_write,
     )
 
@@ -161,9 +205,30 @@ def main():
         uuid=CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID,
         value=[],
         notifying=False,
-        flags=["write", "write-without-response"],
+        flags=[
+            "write",
+            "write-without-response",
+        ],
         write_callback=on_configurator_public_key,
     )
+
+    # Wi-Fi status
+    device.add_characteristic(
+        srv_id=1,
+        chr_id=4,
+        uuid=WIFI_STATUS_CHARACTERISTIC_UUID,
+        value=list(
+            wifi_connection_status.encode("utf-8")
+        ),
+        notifying=True,
+        flags=[
+            "read",
+            "notify",
+        ],
+        read_callback=read_wifi_status,
+    )
+    # Bluezero's add_characteristic() appends the object but returns None.
+    wifi_status_characteristic = device.characteristics[-1]
 
     print(f"Advertising as {DEVICE_NAME}...")
     print("Waiting for Wi-Fi credentials...")

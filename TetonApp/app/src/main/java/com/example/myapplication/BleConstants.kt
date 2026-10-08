@@ -15,4 +15,7 @@ object BleConstants {
 
     val CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID =
         UUID.fromString("c0ad84ed-5c63-496e-ab9b-5eb2a5315bd2")
+
+    val WIFI_STATUS_CHARACTERISTIC_UUID =
+        UUID.fromString("2277b4bb-a728-4852-9502-4edcccd5f249")
 }
