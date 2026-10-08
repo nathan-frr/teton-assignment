@@ -1,10 +1,34 @@
 from bluezero import adapter
 from bluezero import peripheral
+import subprocess
 
 DEVICE_NAME = "Teton-5FG2"
 
-SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0"
-CHARACTERISTIC_UUID = "12345678-1234-5678-1234-56789abcdef1"
+SERVICE_UUID = "a5f1063d-0998-43be-9946-3eaacaf74ab1"
+CHARACTERISTIC_UUID = "f62b8918-e9ef-4481-94b6-4e5c17f0a700"
+
+
+def connect_to_wifi(ssid, password):
+    result = subprocess.run(
+        [
+            "nmcli",
+            "device",
+            "wifi",
+            "connect",
+            ssid,
+            "password",
+            password,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode == 0:
+        print("Wi-Fi connection successful.")
+        print(result.stdout.strip())
+    else:
+        print("Wi-Fi connection failed.")
+        print(result.stderr.strip())
 
 
 def on_write(value, options):
@@ -14,6 +38,8 @@ def on_write(value, options):
 
     print(f"SSID: {ssid}")
     print(f"Password: {password}")
+
+    connect_to_wifi(ssid, password)
 
 
 def main():
