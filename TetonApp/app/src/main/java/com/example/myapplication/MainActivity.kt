@@ -17,8 +17,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
-import android.util.Log.d
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,15 +55,11 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import org.json.JSONObject
 
-
 private const val DEVICE_NAME_PREFIX = "Teton-"
 private const val SCAN_DURATION_MS = 10_000L
-private const val TAG = "TetonBLE"
-
 private const val REQUESTED_MTU = 517
 private const val GCM_NONCE_LENGTH = 12
 private const val GCM_TAG_LENGTH = 128
-
 
 private data class DiscoveredDevice(
     val bluetoothDevice: BluetoothDevice,
@@ -73,9 +67,7 @@ private data class DiscoveredDevice(
     val signalStrength: Int,
 )
 
-
 class MainActivity : ComponentActivity() {
-
     private lateinit var bluetoothAdapter: BluetoothAdapter
     private var bluetoothScanner: BluetoothLeScanner? = null
     private var bluetoothGatt: BluetoothGatt? = null
@@ -112,11 +104,9 @@ class MainActivity : ComponentActivity() {
         if (permissionsGranted) {
             startScan()
         } else {
-            Log.w(TAG, "Bluetooth permissions denied: $permissions")
             status = "Bluetooth permissions are required to scan and connect"
         }
     }
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -201,7 +191,6 @@ class MainActivity : ComponentActivity() {
                         Spacer(Modifier.height(20.dp))
 
                         if (isProvisioningReady) {
-
                             Button(
                                 onClick = ::returnToScanning,
                                 enabled = !isSendingCredentials,
@@ -240,16 +229,13 @@ class MainActivity : ComponentActivity() {
                             Spacer(Modifier.height(16.dp))
 
                             if (wifiConnected) {
-
                                 Text(
                                     text = "Wi-Fi connected ✓",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
-
                             } else if (waitingForWifiConfirmation) {
-
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.Center,
@@ -268,9 +254,7 @@ class MainActivity : ComponentActivity() {
                                         style = MaterialTheme.typography.bodyMedium,
                                     )
                                 }
-
                             } else {
-
                                 Button(
                                     onClick = ::sendWifiCredentials,
                                     enabled = ssid.isNotBlank() &&
@@ -287,9 +271,7 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                             }
-
                         } else if (devices.isNotEmpty()) {
-
                             Text(
                                 text = "Available devices",
                                 modifier = Modifier.fillMaxWidth(),
@@ -338,9 +320,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
-
                         } else if (!isScanning) {
-
                             Text(
                                 text = "Tap scan to find nearby devices.",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -352,7 +332,6 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
 
     private fun requestBluetoothPermissions() {
         val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -369,17 +348,10 @@ class MainActivity : ComponentActivity() {
         permissionLauncher.launch(permissions)
     }
 
-
     private fun startScan() {
         val scanner = bluetoothAdapter.bluetoothLeScanner
 
         if (!bluetoothAdapter.isEnabled || scanner == null) {
-            Log.w(
-                TAG,
-                "Cannot scan: Bluetooth enabled=${bluetoothAdapter.isEnabled}, " +
-                        "scannerAvailable=${scanner != null}"
-            )
-
             status = "Turn on Bluetooth before scanning"
             return
         }
@@ -397,19 +369,11 @@ class MainActivity : ComponentActivity() {
                 stopScanTask,
                 SCAN_DURATION_MS
             )
-
-        } catch (exception: SecurityException) {
-            Log.e(
-                TAG,
-                "BLE scan could not start because permission is missing",
-                exception
-            )
-
+        } catch (_: SecurityException) {
             isScanning = false
             status = "Bluetooth permission is required to scan"
         }
     }
-
 
     private fun stopScan(finalStatus: String? = null) {
         mainHandler.removeCallbacks(stopScanTask)
@@ -418,10 +382,6 @@ class MainActivity : ComponentActivity() {
             try {
                 bluetoothScanner?.stopScan(scanCallback)
             } catch (_: SecurityException) {
-                Log.w(
-                    TAG,
-                    "Could not stop BLE scan because permission was revoked"
-                )
             }
         }
 
@@ -436,9 +396,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
     private val scanCallback = object : ScanCallback() {
-
         override fun onScanResult(
             callbackType: Int,
             result: ScanResult,
@@ -475,19 +433,12 @@ class MainActivity : ComponentActivity() {
             status = "Select a device to connect"
         }
 
-
         override fun onScanFailed(errorCode: Int) {
-            Log.e(
-                TAG,
-                "BLE scan failed with errorCode=$errorCode"
-            )
-
             isScanning = false
             mainHandler.removeCallbacks(stopScanTask)
             status = "Scan failed (error $errorCode)"
         }
     }
-
 
     @SuppressLint("MissingPermission")
     private fun connectToDevice(device: BluetoothDevice) {
@@ -511,18 +462,11 @@ class MainActivity : ComponentActivity() {
                 false,
                 gattCallback
             )
-        } catch (exception: SecurityException) {
-            Log.e(
-                TAG,
-                "Could not connect because Bluetooth permission is missing",
-                exception
-            )
-
+        } catch (_: SecurityException) {
             status = "Bluetooth permission is required to connect"
             null
         }
     }
-
 
     @SuppressLint("MissingPermission")
     private fun returnToScanning() {
@@ -540,13 +484,6 @@ class MainActivity : ComponentActivity() {
         status = "Ready to scan"
     }
 
-
-    private fun ByteArray.toHex(): String =
-        joinToString("") {
-            "%02x".format(it)
-        }
-
-
     @SuppressLint("MissingPermission")
     private fun sendConfiguratorPublicKey(
         gatt: BluetoothGatt,
@@ -562,11 +499,6 @@ class MainActivity : ComponentActivity() {
                 keyPair = keyPair!!,
                 peerRawPublicKey = tetonPublicKey,
             )
-
-        d(
-            TAG,
-            "Android session key: ${sessionKey!!.toHex()}"
-        )
 
         val service =
             gatt.getService(BleConstants.SERVICE_UUID)
@@ -591,18 +523,11 @@ class MainActivity : ComponentActivity() {
         )
 
         if (writeResult != BluetoothGatt.GATT_SUCCESS) {
-            Log.e(
-                TAG,
-                "Could not start configurator public-key write; " +
-                        "status=$writeResult"
-            )
-
             status =
                 "Could not start configurator public-key write " +
                         "(error $writeResult)"
         }
     }
-
 
     @SuppressLint("MissingPermission")
     private fun sendWifiCredentials() {
@@ -630,12 +555,6 @@ class MainActivity : ComponentActivity() {
         status = "Sending Credentials…"
 
         try {
-            /*
-             * Create a compact JSON payload.
-             *
-             * Example:
-             * {"ssid":"MyWifi","password":"secret123"}
-             */
             val credentialsJson = JSONObject()
                 .put("ssid", ssid)
                 .put("password", password)
@@ -644,12 +563,6 @@ class MainActivity : ComponentActivity() {
             val encryptedPayload = encryptCredentials(
                 credentialsJson.toByteArray(Charsets.UTF_8),
                 currentSessionKey,
-            )
-
-            Log.d(
-                TAG,
-                "Encrypted credential payload length: " +
-                        "${encryptedPayload.size} bytes"
             )
 
             val service =
@@ -661,11 +574,6 @@ class MainActivity : ComponentActivity() {
                 )
 
             if (characteristic == null) {
-                Log.e(
-                    TAG,
-                    "Wi-Fi provisioning characteristic not found"
-                )
-
                 status =
                     "Wi-Fi provisioning characteristic not found"
 
@@ -681,48 +589,27 @@ class MainActivity : ComponentActivity() {
                 BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             )
 
-            Log.d(TAG, "Credential write queued; result=$writeResult")
-
             if (writeResult != BluetoothGatt.GATT_SUCCESS) {
-                Log.e(
-                    TAG,
-                    "Could not start credential write; " +
-                            "status=$writeResult"
-                )
-
                 status =
                     "Could not send credentials " +
                             "(error $writeResult)"
 
                 isSendingCredentials = false
             }
-
-        } catch (exception: Exception) {
-            Log.e(
-                TAG,
-                "Could not encrypt/send Wi-Fi credentials",
-                exception
-            )
-
+        } catch (_: Exception) {
             status = "Could not encrypt Wi-Fi credentials"
             isSendingCredentials = false
         }
     }
 
-
     private fun encryptCredentials(
         plaintext: ByteArray,
         sessionKey: ByteArray,
     ): ByteArray {
-
         require(sessionKey.size == 32) {
             "AES-256 session key must be 32 bytes"
         }
 
-        /*
-         * AES-GCM uses a fresh random 12-byte nonce for
-         * every encryption operation.
-         */
         val nonce = ByteArray(GCM_NONCE_LENGTH)
 
         SecureRandom().nextBytes(nonce)
@@ -747,13 +634,6 @@ class MainActivity : ComponentActivity() {
 
         val ciphertext = cipher.doFinal(plaintext)
 
-        /*
-         * Wire format:
-         *
-         * [12-byte nonce][ciphertext + 16-byte GCM tag]
-         *
-         * The nonce does not need to be secret.
-         */
         return nonce + ciphertext
     }
 
@@ -768,7 +648,6 @@ class MainActivity : ComponentActivity() {
         )
 
         if (characteristic == null) {
-            Log.e(TAG, "Wi-Fi status characteristic not found")
             return false
         }
 
@@ -777,7 +656,6 @@ class MainActivity : ComponentActivity() {
                 true
             )
         ) {
-            Log.e(TAG, "Could not enable local Wi-Fi notifications")
             return false
         }
 
@@ -788,7 +666,6 @@ class MainActivity : ComponentActivity() {
         )
 
         if (descriptor == null) {
-            Log.e(TAG, "CCCD descriptor not found")
             return false
         }
 
@@ -801,18 +678,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
-
         override fun onConnectionStateChange(
             gatt: BluetoothGatt,
             statusCode: Int,
             newState: Int,
         ) {
             if (statusCode != BluetoothGatt.GATT_SUCCESS) {
-                Log.e(
-                    TAG,
-                    "GATT connection failed with status=$statusCode"
-                )
-
                 isConnected = false
                 isProvisioningReady = false
                 status = "Connection failed (error $statusCode)"
@@ -822,44 +693,21 @@ class MainActivity : ComponentActivity() {
             }
 
             when (newState) {
-
                 BluetoothGatt.STATE_CONNECTED -> {
                     isConnected = true
 
                     status =
                         "Connected; checking Teton service…"
 
-                    /*
-                     * Ask for a larger MTU so the encrypted credential
-                     * payload can fit into a single GATT write.
-                     */
                     try {
-                        val mtuRequested =
-                            gatt.requestMtu(REQUESTED_MTU)
-
-                        if (!mtuRequested) {
-                            Log.w(
-                                TAG,
-                                "Could not request larger BLE MTU"
-                            )
-                        }
-                    } catch (exception: SecurityException) {
-                        Log.w(
-                            TAG,
-                            "Could not request BLE MTU",
-                            exception
-                        )
+                        gatt.requestMtu(REQUESTED_MTU)
+                    } catch (_: SecurityException) {
                     }
 
                     val discoveryStarted =
                         gatt.discoverServices()
 
                     if (!discoveryStarted) {
-                        Log.e(
-                            TAG,
-                            "Could not start GATT service discovery"
-                        )
-
                         status =
                             "Could not start service discovery"
                     }
@@ -876,55 +724,20 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-
-        override fun onMtuChanged(
-            gatt: BluetoothGatt,
-            mtu: Int,
-            statusCode: Int,
-        ) {
-            if (statusCode == BluetoothGatt.GATT_SUCCESS) {
-                Log.d(
-                    TAG,
-                    "BLE MTU negotiated: $mtu"
-                )
-            } else {
-                Log.w(
-                    TAG,
-                    "BLE MTU request failed: status=$statusCode"
-                )
-            }
-        }
-
-
         override fun onServicesDiscovered(
             gatt: BluetoothGatt,
             statusCode: Int,
         ) {
             if (statusCode != BluetoothGatt.GATT_SUCCESS) {
-                Log.e(
-                    TAG,
-                    "Service discovery failed with status=$statusCode"
-                )
-
                 status =
                     "Service discovery failed (error $statusCode)"
                 return
             }
 
-            val serviceUuids =
-                gatt.services.map { it.uuid }
-
             val service =
                 gatt.getService(BleConstants.SERVICE_UUID)
 
             if (service == null) {
-                Log.e(
-                    TAG,
-                    "Expected Teton service " +
-                            "${BleConstants.SERVICE_UUID} was not found; " +
-                            "discovered=$serviceUuids"
-                )
-
                 status = "Teton service not found"
                 return
             }
@@ -936,7 +749,6 @@ class MainActivity : ComponentActivity() {
 
             status = "Enabling Wi-Fi status notifications…"
         }
-
 
         override fun onDescriptorWrite(
             gatt: BluetoothGatt,
@@ -953,10 +765,7 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            Log.d(TAG, "Wi-Fi status CCCD write completed; status=$statusCode")
-
             if (statusCode != BluetoothGatt.GATT_SUCCESS) {
-                Log.e(TAG, "Could not enable Wi-Fi status notifications; status=$statusCode")
                 status = "Could not enable Wi-Fi status notifications"
                 return
             }
@@ -964,28 +773,13 @@ class MainActivity : ComponentActivity() {
             readTetonPublicKey(gatt)
         }
 
-
         override fun onCharacteristicRead(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
             statusCode: Int,
         ) {
-            Log.d(
-                TAG,
-                "Characteristic read completed: ${characteristic.uuid}, status=$statusCode"
-            )
             if (statusCode != BluetoothGatt.GATT_SUCCESS) {
-                Log.e(
-                    TAG,
-                    "Characteristic ${characteristic.uuid} read failed with status=$statusCode"
-                )
-
-                if (characteristic.uuid == BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID) {
-                    // A transient status-read error is not a Wi-Fi failure.
-                    // Keep waiting for the status notification; only Teton's
-                    // explicit "failed" value should show a connection error.
-                    Log.w(TAG, "Wi-Fi status read failed; waiting for notification")
-                } else {
+                if (characteristic.uuid != BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID) {
                     status = "Failed to read public key"
                 }
                 return
@@ -1000,46 +794,26 @@ class MainActivity : ComponentActivity() {
 
                 BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID -> {
                     val wifiStatus = characteristic.value.toString(Charsets.UTF_8)
-                    Log.d(TAG, "Wi-Fi status read from Teton: $wifiStatus")
                     applyWifiStatus(wifiStatus)
                 }
             }
         }
-
 
         override fun onCharacteristicWrite(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
             statusCode: Int,
         ) {
-            Log.d(
-                TAG,
-                "Characteristic write completed: ${characteristic.uuid}, status=$statusCode"
-            )
             if (
                 characteristic.uuid ==
                 BleConstants.CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID
             ) {
                 if (statusCode == BluetoothGatt.GATT_SUCCESS) {
-
                     status =
                         "Secure connection established"
 
                     isProvisioningReady = true
-
-                    d(
-                        TAG,
-                        "Configurator public key sent"
-                    )
-
                 } else {
-
-                    Log.e(
-                        TAG,
-                        "Configurator public-key write failed; " +
-                                "status=$statusCode"
-                    )
-
                     status =
                         "Failed to send configurator public key"
                 }
@@ -1052,20 +826,12 @@ class MainActivity : ComponentActivity() {
                 BleConstants.PROVISIONING_CHARACTERISTIC_UUID
             ) {
                 if (statusCode == BluetoothGatt.GATT_SUCCESS) {
-                    Log.d(TAG, "Credential write acknowledged; reading Wi-Fi status")
                     if (!wifiConnected) {
                         waitingForWifiConfirmation = true
                         status = "Waiting for Wi-Fi connection…"
                     }
                     readWifiStatus(gatt)
-
                 } else {
-
-                    Log.e(
-                        TAG,
-                        "Credential write failed; status=$statusCode"
-                    )
-
                     status = "Failed to send Wi-Fi credentials"
                     isSendingCredentials = false
                 }
@@ -1091,17 +857,11 @@ class MainActivity : ComponentActivity() {
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray,
         ) {
-            Log.d(TAG, "Characteristic changed callback: ${characteristic.uuid}")
             if (
                 characteristic.uuid ==
                 BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID
             ) {
                 val wifiStatus = value.toString(Charsets.UTF_8)
-
-                Log.d(
-                    TAG,
-                    "Wi-Fi status notification received: $wifiStatus"
-                )
 
                 applyWifiStatus(wifiStatus)
             }
@@ -1130,10 +890,9 @@ class MainActivity : ComponentActivity() {
                 status = "Could not connect to Wi-Fi"
             }
 
-            else -> Log.w(TAG, "Unrecognized Wi-Fi status from Teton: '$wifiStatus'")
+            else -> Unit
         }
     }
-
 
     @SuppressLint("MissingPermission")
     private fun readWifiStatus(gatt: BluetoothGatt) {
@@ -1142,14 +901,11 @@ class MainActivity : ComponentActivity() {
             ?.getCharacteristic(BleConstants.WIFI_STATUS_CHARACTERISTIC_UUID)
 
         if (characteristic == null) {
-            Log.e(TAG, "Cannot read Wi-Fi status: characteristic not found")
             return
         }
 
-        val started = gatt.readCharacteristic(characteristic)
-        Log.d(TAG, "Requested Wi-Fi status read; started=$started")
+        gatt.readCharacteristic(characteristic)
     }
-
 
     @SuppressLint("MissingPermission")
     private fun readTetonPublicKey(gatt: BluetoothGatt) {
@@ -1158,18 +914,15 @@ class MainActivity : ComponentActivity() {
             ?.getCharacteristic(BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID)
 
         if (characteristic == null) {
-            Log.e(TAG, "Public-key characteristic ${BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID} was not found")
             status = "Public key characteristic not found"
             return
         }
 
         status = "Reading Teton public key…"
         if (!gatt.readCharacteristic(characteristic)) {
-            Log.e(TAG, "Could not start public-key characteristic read")
             status = "Could not start public-key read"
         }
     }
-
 
     override fun onDestroy() {
         stopScan()

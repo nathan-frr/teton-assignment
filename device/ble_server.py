@@ -15,6 +15,7 @@ SERVICE_UUID = "a5f1063d-0998-43be-9946-3eaacaf74ab1"
 CHARACTERISTIC_UUID = "f62b8918-e9ef-4481-94b6-4e5c17f0a700"
 PUBLIC_KEY_CHARACTERISTIC_UUID = "75a65872-af14-4fde-9ab7-b68e3df74d30"
 CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID = "c0ad84ed-5c63-496e-ab9b-5eb2a5315bd2"
+WIFI_STATUS_CHARACTERISTIC_UUID = "2277b4bb-a728-4852-9502-4edcccd5f249"
 
 GCM_NONCE_LENGTH = 12
 
@@ -39,12 +40,7 @@ def update_wifi_status(status):
     print(f"Wi-Fi status: {status}")
 
     if wifi_status_characteristic is not None:
-        wifi_status_characteristic.set_value(
-            list(status.encode("utf-8"))
-        )
-        print(f"BLE Wi-Fi status characteristic updated to: {status}")
-    else:
-        print("BLE Wi-Fi status characteristic is not initialized")
+        wifi_status_characteristic.set_value(list(status.encode("utf-8")))
 
 
 def connect_to_wifi(ssid, password):
@@ -84,19 +80,11 @@ def on_write(value, options):
 
     encrypted_data = bytes(value)
 
-    print(
-        f"Encrypted Wi-Fi credentials received "
-        f"({len(encrypted_data)} bytes)."
-    )
-
     if len(encrypted_data) <= GCM_NONCE_LENGTH:
-        print("Invalid encrypted payload.")
         update_wifi_status("failed")
         return
 
     try:
-        # Android sends:
-        # [12-byte nonce][ciphertext + GCM authentication tag]
         nonce = encrypted_data[:GCM_NONCE_LENGTH]
         ciphertext = encrypted_data[GCM_NONCE_LENGTH:]
 
@@ -108,8 +96,6 @@ def on_write(value, options):
 
         ssid = credentials["ssid"].strip()
         password = credentials["password"]
-
-        print(f"Received Wi-Fi credentials for SSID: {ssid}")
 
         update_wifi_status("connecting")
 
@@ -123,13 +109,8 @@ def on_write(value, options):
         else:
             update_wifi_status("failed")
 
-    except Exception as exception:
+    except Exception:
         update_wifi_status("failed")
-
-        print("Failed to decrypt Wi-Fi credentials.")
-        print(
-            f"Error: {type(exception).__name__}: {exception}"
-        )
 
 
 def on_configurator_public_key(value, options):
@@ -138,22 +119,13 @@ def on_configurator_public_key(value, options):
 
     configurator_public_key = bytes(value)
 
-    print(
-        f"Configurator public key received: "
-        f"{configurator_public_key.hex()}"
-    )
-
     if len(configurator_public_key) != 32:
-        print("Invalid configurator public key.")
         return
 
     session_key = derive_session_key_from_peer(
         teton_private_key,
         configurator_public_key,
     )
-
-    print(f"Teton session key: {session_key.hex()}")
-    print("Secure provisioning session established.")
 
 
 def main():
@@ -212,7 +184,6 @@ def main():
         write_callback=on_configurator_public_key,
     )
 
-    # Wi-Fi status
     device.add_characteristic(
         srv_id=1,
         chr_id=4,
@@ -227,11 +198,7 @@ def main():
         ],
         read_callback=read_wifi_status,
     )
-    # Bluezero's add_characteristic() appends the object but returns None.
     wifi_status_characteristic = device.characteristics[-1]
-
-    print(f"Advertising as {DEVICE_NAME}...")
-    print("Waiting for Wi-Fi credentials...")
 
     device.publish()
 
