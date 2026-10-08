@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -15,6 +16,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,9 +46,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.security.KeyPair
 
-private const val DEVICE_NAME_PREFIX = "Teton"
+private const val DEVICE_NAME_PREFIX = "Teton-"
 private const val SCAN_DURATION_MS = 10_000L
+private const val TAG = "TetonBLE"
 
 private data class DiscoveredDevice(
     val bluetoothDevice: BluetoothDevice,
@@ -67,19 +71,22 @@ class MainActivity : ComponentActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val stopScanTask = Runnable { stopScan("Scan complete") }
 
+    private var keyPair: KeyPair? = null
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { permissions ->
         val permissionsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissions[Manifest.permission.BLUETOOTH_SCAN] == true &&
-                    permissions[Manifest.permission.BLUETOOTH_CONNECT] == true
+                permissions[Manifest.permission.BLUETOOTH_CONNECT] == true
         } else {
-            permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
         }
 
         if (permissionsGranted) {
             startScan()
         } else {
+            Log.w(TAG, "Bluetooth permissions denied: $permissions")
             status = "Bluetooth permissions are required to scan and connect"
         }
     }
@@ -208,6 +215,7 @@ class MainActivity : ComponentActivity() {
     private fun startScan() {
         val scanner = bluetoothAdapter.bluetoothLeScanner
         if (!bluetoothAdapter.isEnabled || scanner == null) {
+            Log.w(TAG, "Cannot scan: Bluetooth enabled=${bluetoothAdapter.isEnabled}, scannerAvailable=${scanner != null}")
             status = "Turn on Bluetooth before scanning"
             return
         }
@@ -221,7 +229,8 @@ class MainActivity : ComponentActivity() {
             scanner.startScan(scanCallback)
             mainHandler.removeCallbacks(stopScanTask)
             mainHandler.postDelayed(stopScanTask, SCAN_DURATION_MS)
-        } catch (_: SecurityException) {
+        } catch (exception: SecurityException) {
+            Log.e(TAG, "BLE scan could not start because permission is missing", exception)
             isScanning = false
             status = "Bluetooth permission is required to scan"
         }
@@ -233,6 +242,7 @@ class MainActivity : ComponentActivity() {
             try {
                 bluetoothScanner?.stopScan(scanCallback)
             } catch (_: SecurityException) {
+                Log.w(TAG, "Could not stop BLE scan because permission was revoked")
                 // Permissions may have been revoked while scanning.
             }
         }
@@ -252,13 +262,14 @@ class MainActivity : ComponentActivity() {
 
             val discovered = DiscoveredDevice(result.device, name, result.rssi)
             devices = (
-                    devices.filterNot { it.bluetoothDevice.address == result.device.address } + discovered
-                    )
+                devices.filterNot { it.bluetoothDevice.address == result.device.address } + discovered
+            )
                 .sortedBy { it.name.lowercase() }
             status = "Select a device to connect"
         }
 
         override fun onScanFailed(errorCode: Int) {
+            Log.e(TAG, "BLE scan failed with errorCode=$errorCode")
             isScanning = false
             mainHandler.removeCallbacks(stopScanTask)
             status = "Scan failed (error $errorCode)"
@@ -271,9 +282,44 @@ class MainActivity : ComponentActivity() {
         status = "Connecting…"
         bluetoothGatt = try {
             device.connectGatt(this, false, gattCallback)
-        } catch (_: SecurityException) {
+        } catch (exception: SecurityException) {
+            Log.e(TAG, "Could not connect because Bluetooth permission is missing", exception)
             status = "Bluetooth permission is required to connect"
             null
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendConfiguratorPublicKey(gatt: BluetoothGatt) {
+
+        keyPair = CryptoUtils.generateX25519KeyPair()
+
+        val publicKey =
+            CryptoUtils.getRawPublicKey(keyPair!!)
+
+        val service =
+            gatt.getService(BleConstants.SERVICE_UUID)
+
+        val characteristic =
+            service?.getCharacteristic(
+                BleConstants.CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID
+            )
+
+        if (characteristic == null) {
+            status = "Configurator public key characteristic not found"
+            return
+        }
+
+        status = "Sending configurator public key..."
+
+        val writeResult = gatt.writeCharacteristic(
+            characteristic,
+            publicKey,
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        )
+        if (writeResult != BluetoothGatt.GATT_SUCCESS) {
+            Log.e(TAG, "Could not start configurator public-key write; status=$writeResult")
+            status = "Could not start configurator public-key write (error $writeResult)"
         }
     }
 
@@ -284,6 +330,7 @@ class MainActivity : ComponentActivity() {
             newState: Int,
         ) {
             if (statusCode != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(TAG, "GATT connection failed with status=$statusCode")
                 status = "Connection failed (error $statusCode)"
                 gatt.close()
                 return
@@ -292,20 +339,30 @@ class MainActivity : ComponentActivity() {
             when (newState) {
                 BluetoothGatt.STATE_CONNECTED -> {
                     status = "Connected; checking Teton service…"
-                    gatt.discoverServices()
+                    val discoveryStarted = gatt.discoverServices()
+                    if (!discoveryStarted) {
+                        Log.e(TAG, "Could not start GATT service discovery")
+                        status = "Could not start service discovery"
+                    }
                 }
-                BluetoothGatt.STATE_DISCONNECTED -> status = "Disconnected"
+                BluetoothGatt.STATE_DISCONNECTED -> {
+                    status = "Disconnected"
+                }
             }
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, statusCode: Int) {
             if (statusCode != BluetoothGatt.GATT_SUCCESS) {
-                status = "Service discovery failed"
+                Log.e(TAG, "Service discovery failed with status=$statusCode")
+                status = "Service discovery failed (error $statusCode)"
                 return
             }
 
+            val serviceUuids = gatt.services.map { it.uuid }
+
             val service = gatt.getService(BleConstants.SERVICE_UUID)
             if (service == null) {
+                Log.e(TAG, "Expected Teton service ${BleConstants.SERVICE_UUID} was not found; discovered=$serviceUuids")
                 status = "Teton service not found"
                 return
             }
@@ -314,12 +371,17 @@ class MainActivity : ComponentActivity() {
                 BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID,
             )
             if (publicKeyCharacteristic == null) {
+                Log.e(TAG, "Public-key characteristic ${BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID} was not found")
                 status = "Public key characteristic not found"
                 return
             }
 
-            status = "Reading public key…"
-            gatt.readCharacteristic(publicKeyCharacteristic)
+            status = "Reading Teton public key…"
+            val readStarted = gatt.readCharacteristic(publicKeyCharacteristic)
+            if (!readStarted) {
+                Log.e(TAG, "Could not start public-key characteristic read")
+                status = "Could not start public-key read"
+            }
         }
 
         override fun onCharacteristicRead(
@@ -328,12 +390,38 @@ class MainActivity : ComponentActivity() {
             statusCode: Int,
         ) {
             if (statusCode != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(TAG, "Characteristic read failed with status=$statusCode")
                 status = "Failed to read public key"
                 return
             }
-            if (characteristic.uuid == BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID) {
-                val publicKeyHex = characteristic.value.joinToString(" ") { "%02x".format(it) }
-                status = "Public key received: $publicKeyHex"
+
+            if (characteristic.uuid ==
+                BleConstants.PUBLIC_KEY_CHARACTERISTIC_UUID
+            ) {
+                val tetonPublicKey = characteristic.value
+
+                status = "Teton public key received"
+
+                sendConfiguratorPublicKey(gatt)
+            }
+        }
+
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            statusCode: Int
+        ) {
+            if (
+                characteristic.uuid ==
+                BleConstants.CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID
+            ) {
+                status =
+                    if (statusCode == BluetoothGatt.GATT_SUCCESS) {
+                        "Configurator public key sent"
+                    } else {
+                        Log.e(TAG, "Configurator public-key write failed; status=$statusCode")
+                        "Failed to send configurator public key"
+                    }
             }
         }
     }
