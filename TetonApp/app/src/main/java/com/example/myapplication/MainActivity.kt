@@ -619,6 +619,20 @@ class MainActivity : ComponentActivity() {
                 status = "Wi-Fi connected"
             }
 
+            "ssid_not_found" -> {
+                waitingForWifiConfirmation = false
+                wifiConnected = false
+                isSendingCredentials = false
+                status = "SSID not found. Check the network name and try again."
+            }
+
+            "password_check" -> {
+                waitingForWifiConfirmation = false
+                wifiConnected = false
+                isSendingCredentials = false
+                status = "Could not connect. Check the password and try again."
+            }
+
             "failed" -> {
                 waitingForWifiConfirmation = false
                 wifiConnected = false

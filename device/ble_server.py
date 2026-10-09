@@ -63,11 +63,26 @@ def connect_to_wifi(ssid, password):
     if result.returncode == 0:
         print("Wi-Fi connection successful.")
         print(result.stdout.strip())
-        return True
+        return "connected"
 
     print("Wi-Fi connection failed.")
-    print(result.stderr.strip())
-    return False
+    error_text = f"{result.stdout}\n{result.stderr}".strip()
+    print(error_text)
+    normalized_error = error_text.casefold()
+
+    if "no network with ssid" in normalized_error:
+        return "ssid_not_found"
+
+    if (
+        "secrets were required, but not provided" in normalized_error
+        or (
+            "802-11-wireless-security.psk" in normalized_error
+            and "property is invalid" in normalized_error
+        )
+    ):
+        return "password_check"
+
+    return "failed"
 
 
 def on_write(value, options):
@@ -99,15 +114,12 @@ def on_write(value, options):
 
         update_wifi_status("connecting")
 
-        connected = connect_to_wifi(
+        connection_status = connect_to_wifi(
             ssid,
             password,
         )
 
-        if connected:
-            update_wifi_status("connected")
-        else:
-            update_wifi_status("failed")
+        update_wifi_status(connection_status)
 
     except Exception:
         update_wifi_status("failed")
