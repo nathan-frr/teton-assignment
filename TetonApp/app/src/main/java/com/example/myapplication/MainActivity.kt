@@ -20,48 +20,16 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
 import java.security.KeyPair
-import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
-import org.json.JSONObject
 
 private const val DEVICE_NAME_PREFIX = "Teton-"
 private const val SCAN_DURATION_MS = 10_000L
 private const val REQUESTED_MTU = 517
-private const val GCM_NONCE_LENGTH = 12
-private const val GCM_TAG_LENGTH = 128
-
-private data class DiscoveredDevice(
+internal data class DiscoveredDevice(
     val bluetoothDevice: BluetoothDevice,
     val name: String,
     val signalStrength: Int,
@@ -118,217 +86,24 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .widthIn(max = 520.dp)
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            text = "Teton setup",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-
-                        Spacer(Modifier.height(8.dp))
-
-                        Text(
-                            text = if (isProvisioningReady) {
-                                "Enter the Wi-Fi credentials for this device."
-                            } else {
-                                "Choose an advertising Teton device to connect."
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-
-                        Spacer(Modifier.height(20.dp))
-
-                        if (!isProvisioningReady) {
-                            Button(
-                                onClick = ::requestBluetoothPermissions,
-                                enabled = !isScanning && !isConnected,
-                            ) {
-                                Text(
-                                    if (isScanning) {
-                                        "Scanning…"
-                                    } else {
-                                        "Scan for devices"
-                                    }
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            if (isScanning) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier
-                                        .width(18.dp)
-                                        .height(18.dp),
-                                    strokeWidth = 2.dp,
-                                )
-
-                                Spacer(Modifier.width(8.dp))
-                            }
-
-                            Text(
-                                text = status,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        Spacer(Modifier.height(20.dp))
-
-                        if (isProvisioningReady) {
-                            Button(
-                                onClick = ::returnToScanning,
-                                enabled = !isSendingCredentials,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text("Back to device list")
-                            }
-
-                            Spacer(Modifier.height(12.dp))
-
-                            OutlinedTextField(
-                                value = ssid,
-                                onValueChange = { ssid = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = {
-                                    Text("Wi-Fi network name (SSID)")
-                                },
-                                singleLine = true,
-                                enabled = !isSendingCredentials,
-                            )
-
-                            Spacer(Modifier.height(12.dp))
-
-                            OutlinedTextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = {
-                                    Text("Wi-Fi password")
-                                },
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                                enabled = !isSendingCredentials,
-                            )
-
-                            Spacer(Modifier.height(16.dp))
-
-                            if (wifiConnected) {
-                                Text(
-                                    text = "Wi-Fi connected ✓",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            } else if (waitingForWifiConfirmation) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier
-                                            .width(20.dp)
-                                            .height(20.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-
-                                    Spacer(Modifier.width(10.dp))
-
-                                    Text(
-                                        text = "Waiting for Wi-Fi connection…",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
-                            } else {
-                                Button(
-                                    onClick = ::sendWifiCredentials,
-                                    enabled = ssid.isNotBlank() &&
-                                            password.isNotEmpty() &&
-                                            !isSendingCredentials,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(
-                                        if (isSendingCredentials) {
-                                            "Sending Credentials…"
-                                        } else {
-                                            "Send Wi-Fi credentials"
-                                        }
-                                    )
-                                }
-                            }
-                        } else if (devices.isNotEmpty()) {
-                            Text(
-                                text = "Available devices",
-                                modifier = Modifier.fillMaxWidth(),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-
-                            Spacer(Modifier.height(8.dp))
-
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 280.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                items(
-                                    devices,
-                                    key = { it.bluetoothDevice.address },
-                                ) { device ->
-
-                                    Card(
-                                        onClick = {
-                                            connectToDevice(
-                                                device.bluetoothDevice
-                                            )
-                                        },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) {
-                                        Column(
-                                            Modifier.padding(16.dp)
-                                        ) {
-                                            Text(
-                                                text = device.name,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.SemiBold,
-                                            )
-
-                                            Spacer(Modifier.height(4.dp))
-
-                                            Text(
-                                                text = "Signal strength: ${device.signalStrength} dBm",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        } else if (!isScanning) {
-                            Text(
-                                text = "Tap scan to find nearby devices.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
+                TetonSetupScreen(
+                    status = status,
+                    isScanning = isScanning,
+                    devices = devices,
+                    isConnected = isConnected,
+                    isProvisioningReady = isProvisioningReady,
+                    wifiConnected = wifiConnected,
+                    waitingForWifiConfirmation = waitingForWifiConfirmation,
+                    ssid = ssid,
+                    password = password,
+                    isSendingCredentials = isSendingCredentials,
+                    onScan = ::requestBluetoothPermissions,
+                    onReturnToScanning = ::returnToScanning,
+                    onSsidChange = { ssid = it },
+                    onPasswordChange = { password = it },
+                    onSendCredentials = ::sendWifiCredentials,
+                    onDeviceSelected = { connectToDevice(it.bluetoothDevice) },
+                )
             }
         }
     }
@@ -555,14 +330,10 @@ class MainActivity : ComponentActivity() {
         status = "Sending Credentials…"
 
         try {
-            val credentialsJson = JSONObject()
-                .put("ssid", ssid)
-                .put("password", password)
-                .toString()
-
-            val encryptedPayload = encryptCredentials(
-                credentialsJson.toByteArray(Charsets.UTF_8),
-                currentSessionKey,
+            val encryptedPayload = CryptoUtils.encryptWifiCredentials(
+                ssid = ssid,
+                password = password,
+                sessionKey = currentSessionKey,
             )
 
             val service =
@@ -600,41 +371,6 @@ class MainActivity : ComponentActivity() {
             status = "Could not encrypt Wi-Fi credentials"
             isSendingCredentials = false
         }
-    }
-
-    private fun encryptCredentials(
-        plaintext: ByteArray,
-        sessionKey: ByteArray,
-    ): ByteArray {
-        require(sessionKey.size == 32) {
-            "AES-256 session key must be 32 bytes"
-        }
-
-        val nonce = ByteArray(GCM_NONCE_LENGTH)
-
-        SecureRandom().nextBytes(nonce)
-
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-
-        val key = SecretKeySpec(
-            sessionKey,
-            "AES"
-        )
-
-        val parameterSpec = GCMParameterSpec(
-            GCM_TAG_LENGTH,
-            nonce
-        )
-
-        cipher.init(
-            Cipher.ENCRYPT_MODE,
-            key,
-            parameterSpec
-        )
-
-        val ciphertext = cipher.doFinal(plaintext)
-
-        return nonce + ciphertext
     }
 
     @SuppressLint("MissingPermission")

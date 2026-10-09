@@ -3,14 +3,46 @@ package com.example.myapplication
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
+import java.security.SecureRandom
 import java.security.spec.X509EncodedKeySpec
 import javax.crypto.KeyAgreement
+import javax.crypto.Cipher
 import javax.crypto.Mac
+import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import org.json.JSONObject
 
 object CryptoUtils {
 
     private const val HKDF_INFO = "teton-provisioning-v1"
+    private const val GCM_NONCE_LENGTH = 12
+    private const val GCM_TAG_LENGTH = 128
+
+    fun encryptWifiCredentials(
+        ssid: String,
+        password: String,
+        sessionKey: ByteArray,
+    ): ByteArray {
+        val plaintext = JSONObject()
+            .put("ssid", ssid)
+            .put("password", password)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+
+        require(sessionKey.size == 32) {
+            "AES-256 session key must be 32 bytes"
+        }
+
+        val nonce = ByteArray(GCM_NONCE_LENGTH)
+        SecureRandom().nextBytes(nonce)
+
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val key = SecretKeySpec(sessionKey, "AES")
+        val parameterSpec = GCMParameterSpec(GCM_TAG_LENGTH, nonce)
+        cipher.init(Cipher.ENCRYPT_MODE, key, parameterSpec)
+
+        return nonce + cipher.doFinal(plaintext)
+    }
 
     fun generateX25519KeyPair(): KeyPair {
         val generator = KeyPairGenerator.getInstance("X25519")
