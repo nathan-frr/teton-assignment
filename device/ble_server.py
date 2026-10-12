@@ -1,4 +1,5 @@
 from bluezero import adapter
+from bluezero import async_tools
 from bluezero import peripheral
 import subprocess
 
@@ -18,6 +19,7 @@ CONFIGURATOR_PUBLIC_KEY_CHARACTERISTIC_UUID = "c0ad84ed-5c63-496e-ab9b-5eb2a5315
 WIFI_STATUS_CHARACTERISTIC_UUID = "2277b4bb-a728-4852-9502-4edcccd5f249"
 
 GCM_NONCE_LENGTH = 12
+ADVERTISING_TIMEOUT_SECONDS = 300
 
 teton_private_key = None
 session_key = None
@@ -144,6 +146,30 @@ def main():
     global teton_private_key
     global wifi_status_characteristic
 
+    ble_connected = False
+    advertising_timeout_elapsed = False
+
+    def on_ble_connect(*_args):
+        nonlocal ble_connected
+        ble_connected = True
+
+    def on_ble_disconnect(*_args):
+        nonlocal ble_connected
+        ble_connected = False
+
+        if advertising_timeout_elapsed:
+            device.mainloop.quit()
+
+    def on_advertising_timeout():
+        nonlocal advertising_timeout_elapsed
+        advertising_timeout_elapsed = True
+        print("BLE advertising window expired.")
+
+        if not ble_connected:
+            device.mainloop.quit()
+
+        return False
+
     bluetooth_adapter = list(adapter.Adapter.available())[0]
 
     teton_private_key, public_key = generate_key_pair()
@@ -154,6 +180,8 @@ def main():
         bluetooth_adapter.address,
         local_name=DEVICE_NAME,
     )
+    device.on_connect = on_ble_connect
+    device.on_disconnect = on_ble_disconnect
 
     device.add_service(
         srv_id=1,
@@ -212,6 +240,10 @@ def main():
     )
     wifi_status_characteristic = device.characteristics[-1]
 
+    async_tools.add_timer_seconds(
+        ADVERTISING_TIMEOUT_SECONDS,
+        on_advertising_timeout,
+    )
     device.publish()
 
 

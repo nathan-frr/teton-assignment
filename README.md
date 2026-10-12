@@ -15,19 +15,9 @@ This project implements an offline Wi-Fi provisioning flow for a Teton device. A
 The system consists of two components:
 
 - **Configurator:** An Android application that discovers the Teton device, establishes a shared session key, encrypts the Wi-Fi credentials, and displays the connection result.
-- **Teton device:** A Python BLE server running on Ubuntu 24.04. It receives and decrypts the credentials, configures the Wi-Fi connection using `nmcli`, and reports the result over BLE.
+- **Teton device:** A Python BLE server running on Ubuntu 24.04. It advertises for up to five minutes after startup, receives and decrypts the credentials, configures Wi-Fi using `nmcli`, and reports the result over BLE.
 
-The provisioning flow is:
-
-1. The Ubuntu device starts advertising its BLE provisioning service.
-2. The Android configurator scans for available Teton devices.
-3. The user selects the intended device.
-4. The devices exchange public keys and derive a shared session key.
-5. The configurator provides the Wi-Fi SSID and password and sends the encrypted payload over BLE.
-6. The Ubuntu device decrypts the payload and attempts to connect to the specified network using NetworkManager.
-7. The device reports the connection status, which is displayed in the Android application.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the communication protocol, security considerations, and potential scaling to 200 devices. **TODO later**
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the design decisions, provisioning flow, credential protection, and approach to provisioning 200 devices. Follow [Running the Demo](#running-the-demo) to reproduce the flow.
 
 ## Hardware Requirements
 
@@ -92,7 +82,7 @@ source .venv/bin/activate
 python device/ble_server.py
 ```
 
-The server should start advertising the Teton BLE service and wait for a configurator to connect.
+The server advertises the Teton BLE service for up to five minutes. If a phone connects before the timeout, the server lets that provisioning session finish and exits after the phone disconnects.
 
 Keep this terminal open to observe diagnostic output.
 
@@ -106,7 +96,7 @@ Keep this terminal open to observe diagnostic output.
 
 1. Tap **Scan for devices**.
 2. Select the intended Teton device from the list.
-3. Wait for the BLE connection and secure-session setup to complete.
+3. Wait for the BLE connection and session-key setup to complete.
 
 The device and phone must be within Bluetooth range. They do not need an existing shared Wi-Fi network. Internet access is not needed for provisioning, but may be needed to build the Android app and download its dependencies. The target Wi-Fi network must be in range of the Ubuntu device.
 
