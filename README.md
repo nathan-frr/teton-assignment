@@ -61,7 +61,7 @@ nmcli device status
 
 **Option A — Install the prebuilt APK**
 
-1. Download app-debug.apk from the project's GitHub Release. **TODO**
+1. [Download the Android APK](teton-app-debug.apk) from the project.
 2. Transfer it to your Android phone and install it. You may need to allow installation from that source.
 3. Open the application and grant the requested Bluetooth permissions.
 
@@ -69,7 +69,7 @@ nmcli device status
 
 1. Install Android Studio and the Android SDK.
 2. Open the Android project in Android Studio.
-4. Connect an Android phone with USB debugging enabled, and run the application from Android Studio.
+3. Connect an Android phone with USB debugging enabled, and run the application from Android Studio.
 
 ## Running the Demo
 
@@ -127,4 +127,4 @@ The end-to-end demo has been tested using:
 - Ubuntu 24.04 on a laptop as the Teton device.
 - A Nothing Phone (3a) Pro as the configurator.
 
-### TODO: include demo
+You can find a video of the demo in the file [Final-demo.mp4](Final-demo.mp4). The video shows the full provisioning flow with 2 failure cases: a wrong SSID, and a password too short (Note that a wrong password isn't shown here because it triggers a pop-up on the Ubuntu machine to enter the password manually, but it has been tested on a non-graphical interface as well).
